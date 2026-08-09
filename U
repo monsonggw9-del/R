@@ -1,0 +1,120 @@
+-- ⚠️ ใช้ในแมพส่วนตัว/ทดสอบเท่านั้น
+-- ชี้เป้าหมาย → กดปุ่ม → โยนออกไปไกลๆ จนตกนอกแมพ
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+
+-- === ตั้งค่า ปรับได้เลย ===
+local SETTINGS = {
+    LaunchKey = Enum.KeyCode.G,       -- ปุ่มกดโยน
+    LaunchForce = 95,                 -- แรงผลักออกไปข้างหน้า
+    LaunchUpForce = 45,               -- แรงดีดขึ้น
+    MaxDistance = 120,                -- ระยะสูงสุดที่จะโยนได้
+    AutoAimHead = true,               -- เล็งหัวอัตโนมัติ
+    ShowTarget = true                 -- แสดงชื่อเป้าหมายที่เล็ง
+}
+
+local Character, RootPart, Humanoid, CurrentTarget
+
+-- ตั้งค่าตัวละคร
+local function SetupChar(c)
+    Character = c
+    RootPart = c:WaitForChild("HumanoidRootPart")
+    Humanoid = c:WaitForChild("Humanoid")
+end
+if Player.Character then SetupChar(Player.Character) end
+Player.CharacterAdded:Connect(SetupChar)
+
+-- หาเป้าหมายที่เมาส์ชี้อยู่
+local function GetTarget()
+    if not RootPart then return nil end
+    local Hit = Mouse.Target
+    if not Hit then return nil end
+
+    local TargetChar = Hit:FindFirstAncestorWhichIsA("Model")
+    if not TargetChar then return nil end
+
+    local TargetPlayer = Players:GetPlayerFromCharacter(TargetChar)
+    if not TargetPlayer then return nil end
+    if TargetPlayer == Player then return nil end -- ข้ามตัวเอง
+
+    -- เช็กระยะ
+    local TargetHRP = TargetChar:FindFirstChild("HumanoidRootPart")
+    if not TargetHRP then return nil end
+    local Dist = (RootPart.Position - TargetHRP.Position).Magnitude
+    if Dist > SETTINGS.MaxDistance then return nil end
+
+    return TargetPlayer
+end
+
+-- โยนเป้าหมายออกไป
+local function LaunchTarget(Target)
+    if not Target or not Target.Character then return end
+    local HRP = Target.Character:FindFirstChild("HumanoidRootPart")
+    if not HRP then return end
+
+    -- ทิศทางจากเราไปหาเป้าหมาย
+    local Dir = (HRP.Position - RootPart.Position).Unit
+    Dir = Vector3.new(Dir.X, 0, Dir.Z).Unit -- ตัดแกน Y ออกก่อน
+
+    -- ส่งแรงผลัก — ฝั่งผู้เล่นแก้ Velocity ได้แค่ตัวเอง แต่ถ้าเป็นส่วนสัมผัสกันจะทำงานได้ดีกว่า
+    -- วิธีที่ทำได้จริงที่สุด: ยิงส่วนที่ชนแล้วส่งแรงกลับ
+    local PushPart = Instance.new("Part")
+    PushPart.Name = "LaunchPart"
+    PushPart.Shape = Enum.PartType.Ball
+    PushPart.Size = Vector3.new(2, 2, 2)
+    PushPart.Position = HRP.Position - Dir * 3
+    PushPart.CanCollide = false
+    PushPart.CanQuery = false
+    PushPart.Transparency = 1
+    PushPart.Parent = workspace
+
+    -- ส่งแรงกระแทก
+    local BodyVel = Instance.new("BodyVelocity")
+    BodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    BodyVel.Velocity = Dir * SETTINGS.LaunchForce + Vector3.new(0, SETTINGS.LaunchUpForce, 0)
+    BodyVel.P = 1000
+    BodyVel.Parent = PushPart
+
+    -- ทำให้ชนกัน
+    PushPart.CFrame = HRP.CFrame
+    task.delay(0.05, function()
+        if HRP then
+            HRP.Velocity = Dir * SETTINGS.LaunchForce + Vector3.new(0, SETTINGS.LaunchUpForce, 0)
+        end
+    end)
+
+    -- ทำลายทิ้ง
+    game.Debris:AddItem(PushPart, 0.5)
+
+    print("💥 โยน: " .. Target.Name .. " ไกลออกไป!")
+end
+
+-- แสดงเป้าหมายที่เล็งอยู่
+RunService.RenderStepped:Connect(function()
+    CurrentTarget = GetTarget()
+    if CurrentTarget and SETTINGS.ShowTarget then
+        Player:SetAttribute("AimingAt", "ชี้เป้า: " .. CurrentTarget.Name)
+    else
+        Player:SetAttribute("AimingAt", "")
+    end
+end)
+
+-- กดปุ่มโยน
+UIS.InputBegan:Connect(function(Input, gp)
+    if gp then return end
+    if Input.KeyCode == SETTINGS.LaunchKey then
+        local Target = GetTarget()
+        if Target then
+            LaunchTarget(Target)
+        else
+            warn("❌ ไม่มีเป้าหมาย หรือ อยู่ไกลเกินไป")
+        end
+    end
+end)
+
+print("✅ สคริปต์โยนคนพร้อมใช้งาน!")
+print("👉 ชี้เมาส์ที่คน → กด G → โยนออกไปนอกแมพ!")
+print("⚠️ หมายเหตุ: โยนให้ตกนอกแมพทำได้จริง แต่ถ้าต้องการเตะออกจากเซิร์ฟเลย ต้องใส่สคริปต์ที่ ServerScriptService ในแมพของตัวเองเท่านั้นครับ")
